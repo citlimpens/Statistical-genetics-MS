@@ -1,0 +1,242 @@
+---
+title: "Association Exercises"
+author: "Citlalli Limpens"
+date: "11/27/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+##Exercise 2:Simulate association data
+
+Simulate case-control data under a logistic model.
+\\
+- Define the expit function and functions to simulate gentoypes (simGts = function(rho,
+N)) and phenotypes (simPts = function(gts, alpha = -3, beta = 0, scores = c(0,
+.5, 1)))
+\\
+- Hint 1: Use the genotype simulation function from an earlier exercise.
+\\
+- Hint 2: If you define a vector scores = c(0, .5, 1) then gtScores = scores[gts
++ 1] maps genotypes to scores as defined by the scores vector.
+\\
+- Hint 3: If you have written a function simPts = function(gts, alpha = -3, beta
+= 0, scores = c(0, .5, 1)) that returns a data frame with columns gts and pts
+\\
+then the following function will simulate exactly N0 controls (phenotype = 0) and N1
+cases (phenotype = 1).
+
+```{r}
+simGtsPts = function(N, rho, alpha, beta, phenotype = NULL, 
+                     scores = c(0, 0.5, 1), overshoot = 2) { 
+  d = data.frame() 
+  while (dim(d)[1] < N) { 
+    gts = simGts(rho, N * overshoot)
+    pts = simPts(gts, alpha, beta, scores) 
+    idcs = if (is.null(phenotype)) 
+      1:length(gts) 
+    else which(pts == phenotype) 
+    idcs = idcs[1:min(N - dim(d)[1], length(idcs))] 
+    d = rbind(d, data.frame(gts = gts[idcs], pts = pts[idcs]))
+  } 
+  d
+}
+```
+
+The initial code we were given asks for number of individuals in the sample (N), allele frequency (rho), and the values of the alpha and beta parameters of the mode. The scores 0, 0.5 and 1 correspond to the values of the phenotype according to the genotype. In this case it is an additive mode, if it were a dominant model, the values would be 0, 1 and 1. 
+\\
+d is defined as a data set, and it is where the information will be stored. In the end we will get this data frame with information corresponding to phenotypes and genotypes. 
+\\
+gts is the simulation of only genotypes and pts of only phenotypes, and it of course is dependent on the values of gts. gts needs as imput rho and N. the value of N in this case is multiplied by 2, since we get 2 alleles per individual. pts needs as imput the values of gts, and the parameters alpha and beta of the model, as well as the scores (dependent on which model we're using, additive, dominant or recessive).
+
+#####Genotype simulation function:
+
+```{r}
+HWE = function(rho) {
+  c(rho^2, (1-rho)^2, 2*rho*(1-rho))
+}
+  
+simGts = function(rho, N) as.vector(0:2 %*% rmultinom(N, 1, HWE(rho)))
+
+```
+
+To simulate the genotypes we assume HWE, and we use rho to calculate the frequencies. 
+
+
+#####Logistic function:
+
+```{r}
+expit=function(x) (1/(1+exp(-x)))  
+```
+
+#####Phenotype function:
+
+```{r}
+simPts = function(gts, alpha, beta, scores = c(0, .5, 1)) {
+  gtScores = scores[gts + 1]                      
+  p=expit( alpha +beta * gtScores)
+  u = runif(length(p))
+  as.integer(u<=p)
+}
+```
+
+This function uses the values of the function above and represents its as an integer 1 or 0 representing presence or absence of disease. 
+
+#####Function to simulate N0 controls and N1 cases:
+
+
+```{r}
+simCaseControl = function(N0, N1, rho, alpha, beta, scores = c(0, 0.5, 1), o1 = 1.5, o2 = 3) { 
+  d0 = simGtsPts(N0, rho, alpha, beta, 0, scores) 
+  d1 = simGtsPts(N1, rho, alpha, beta, 1, scores) 
+  d = rbind(d0, d1)
+}
+```
+
+ In this case, d0 simulates the controls and d1 simulates the cases, they are joined together by rbind, forming as a result a data fram d, with both.
+
+##Exercise 3: Testing of association studies
+
+Write a function testCaseControl that tests the association of a binary phenotype with a
+genotype from the above simulations. Make sure you accept a scores argument and map the
+genotypes to scores within that function.
+\\
+Hint 1: Use glm to test the data with a binomial family.
+\\
+Hint 2: From the glm result you can extract the P-value with coefficients(summary(t))[’gts’,
+’Pr(>|z|)’].
+
+
+```{r}
+testControl = function(d, scores = c(0,0.5,1)){
+  gtScore = scores[d$gts+1]
+  test = glm(d$pts ~ gtScore, fam = binomial())
+  pvalue = coefficients(summary(test))['gtScore','Pr(>|z|)']
+  pvalue
+}
+```
+
+The test control function uses the dataframe we created before (d) as well as the scores, which are again dependent on the model (additive for this case).
+\\
+to score the gts, we use the scores and the column of the dataframe containing only the gts (d$gts).
+\\
+To do the testing we use glm with a binomial family, in which we use the pts values from the d dataframe (d$pts) afainst the scores calculated in the step above
+\\
+Finally, the pvalue is callculated using everything before it. 
+
+##Exercise 4: Power of association studies
+
+Repeat simulation of data and application of testCaseControl to estimate the power of a
+given parameter scenario.
+\\
+Hint1: Use a sapply over 1e2 iterations to collect P-values from the individual tests.
+Then the power is given by power = sum(ps < p$level)/length(ps).
+
+
+```{r}
+
+rho = 0.4
+N0 = 100
+N1 = 100
+alpha = -3
+beta = 1
+iterations = 10
+level = .02
+
+pvaluesapply = sapply(1:iterations, function(i){
+  d = simCaseControl(N0, N1, rho, alpha, beta, scores =c(0, 0.5, 1))
+  testControl(d, scores =c(0, 0.5, 1))
+})
+
+power = sum(pvaluesapply<level)/length(pvaluesapply)
+  
+```
+
+
+
+##Exercise 5: Power function of association studies
+
+Make a plot of the power for varying effect sizes.
+
+Effect sizes vary according to the correlation between the two populations (N0,N1). In this case, we could show the effect sizes by varying number of iterations (number of comparisons done between the populations), level, and population sizes. 
+
+Effect of power given different levels:
+
+```{r}
+rho = 0.4
+N0 = 100
+N1 = 100
+alpha = -3
+beta = 1
+iterations = 10
+level = seq(from=.001, to= 1, by=0.005)
+
+
+pvaluesapply = sapply(1:iterations, function(i){
+  d = simCaseControl(N0, N1, rho, alpha, beta, scores =c(0, 0.5, 1))
+  testControl(d, scores =c(0, 0.5, 1))
+})
+ 
+power = c()
+for (l in level) {
+  power = c(power, sum(pvaluesapply<l)/length(pvaluesapply))  
+  }
+
+```
+
+
+```{r}
+plot(level, power)
+```
+
+
+
+##Exicise 6: Misspecification
+
+Make plots of the power function when the scores for simulating data differ from scores used
+while testing.
+
+```{r}
+
+rho = 0.4
+N0 = 100
+N1 = 100
+alpha = -3
+beta = 1
+iterations = 10
+level = .02
+
+pvaluesapply = sapply(1:iterations, function(i){
+  d = simCaseControl(N0, N1, rho, alpha, beta, scores =c(0, 0.5, 1))
+  testControl(d, scores =c(0, 1, 1))
+})
+
+power1 = sum(pvaluesapply<level)/length(pvaluesapply)
+
+pvaluesapply = sapply(1:iterations, function(i){
+  d = simCaseControl(N0, N1, rho, alpha, beta, scores =c(0, 0.5, 1))
+  testControl(d, scores =c(0, 0, 1))
+})
+
+power2 = sum(pvaluesapply<level)/length(pvaluesapply)
+
+pvaluesapply = sapply(1:iterations, function(i){
+  d = simCaseControl(N0, N1, rho, alpha, beta, scores =c(0, 0.5, 1))
+  testControl(d, scores =c(0, 0.5, 1))
+})
+
+power3 = sum(pvaluesapply<level)/length(pvaluesapply)
+
+power = c(power1,power2,power3)
+  
+```
+
+```{r}
+model = c(0, 1, 2)
+plot(model, power)
+```
+
+The plot shows the changes in power when using an additive model (like in the rest of the exercise), but when data varies in scores. 0.0 indicates data with a dominant model, 1.0 with a recessive model, and 2.0 with the same model as the one used. 
